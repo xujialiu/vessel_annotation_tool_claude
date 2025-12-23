@@ -1480,7 +1480,6 @@ class MaskEditor(QMainWindow):
         # Reset annotation mode when switching tasks
         self.annotation_mode = AppConfig.AnnotationMode.NORMAL
         self.canvas.annotation_mode = AppConfig.AnnotationMode.NORMAL
-        self._update_annotation_mode_indicator()
 
         self.modified = False
         self.current_name = None
@@ -1669,7 +1668,6 @@ class MaskEditor(QMainWindow):
             self.annotation_mode = AppConfig.AnnotationMode.NORMAL
             self.canvas.annotation_mode = AppConfig.AnnotationMode.NORMAL
             self._update_mode_buttons_for_annotation()
-            self._update_annotation_mode_indicator()
 
         txt = self.ui.listWidget.item(new_idx).text()
         name = txt[2:] if txt.startswith("✅ ") else txt
@@ -1875,9 +1873,6 @@ class MaskEditor(QMainWindow):
         # Update mode buttons enabled state
         self._update_mode_buttons_for_annotation()
 
-        # Update visual indicator
-        self._update_annotation_mode_indicator()
-
         # Rebuild display with new visualization
         self.canvas._build_pixmaps()
 
@@ -1890,22 +1885,6 @@ class MaskEditor(QMainWindow):
                 btn.setEnabled(mode_id in ("draw_artery", "delete_artery"))
             elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
                 btn.setEnabled(mode_id in ("draw_vein", "delete_vein"))
-
-    def _update_annotation_mode_indicator(self):
-        """Update the UI to show current annotation mode."""
-        if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
-            self.ui.modeGroup.setStyleSheet(
-                f"QGroupBox {{ border: 3px solid {AppConfig.Color.ANNOTATION_MODE_ARTERY}; }}"
-            )
-            self.ui.modeGroup.setTitle("Modes [ARTERY MODE - Ctrl+X to exit]")
-        elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
-            self.ui.modeGroup.setStyleSheet(
-                f"QGroupBox {{ border: 3px solid {AppConfig.Color.ANNOTATION_MODE_VEIN}; }}"
-            )
-            self.ui.modeGroup.setTitle("Modes [VEIN MODE - Ctrl+X to exit]")
-        else:
-            self.ui.modeGroup.setStyleSheet("")
-            self.ui.modeGroup.setTitle("Modes")
 
     def _update_brush_button_styles(self, active):
         """Update button styles to show active mode."""

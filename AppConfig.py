@@ -258,9 +258,9 @@ class AppConfig:
         MODE_DELETE_DISC = "2"
 
         # Dedicated annotation mode shortcuts
-        ANNOTATION_ARTERY = "Ctrl+C"
-        ANNOTATION_VEIN = "Ctrl+V"
-        ANNOTATION_EXIT = "Ctrl+X"
+        ANNOTATION_ARTERY = "Shift+C"
+        ANNOTATION_VEIN = "Shift+V"
+        ANNOTATION_EXIT = "Shift+X"
 
         @classmethod
         def get_shortcuts_html(cls):
