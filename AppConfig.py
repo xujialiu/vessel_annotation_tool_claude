@@ -62,6 +62,16 @@ class AppConfig:
             """
 
     # -----------------------------------------------------------------
+    # Annotation Mode (for dedicated A/V editing)
+    # -----------------------------------------------------------------
+    class AnnotationMode:
+        """Annotation mode constants for dedicated artery/vein editing."""
+
+        NORMAL = "normal"
+        ARTERY = "artery"
+        VEIN = "vein"
+
+    # -----------------------------------------------------------------
     # Task Configuration
     # -----------------------------------------------------------------
     class Task:
@@ -153,6 +163,10 @@ class AppConfig:
         STATUS_SUCCESS = "green"
         STATUS_ERROR = "red"
 
+        # Annotation mode indicator colors (hex strings)
+        ANNOTATION_MODE_ARTERY = "#ff6666"
+        ANNOTATION_MODE_VEIN = "#6666ff"
+
         @classmethod
         def get_av_lut(cls):
             """Get the Artery/Vein color lookup table."""
@@ -173,6 +187,28 @@ class AppConfig:
                 [
                     [0, 0, 0, 0],  # Background
                     [cls.DISC[0], cls.DISC[1], cls.DISC[2], 255],  # Disc
+                ],
+                dtype=np.uint8,
+            )
+
+        @classmethod
+        def get_artery_only_lut(cls):
+            """Get LUT for artery-only display (single mask as red)."""
+            return np.array(
+                [
+                    [0, 0, 0, 0],  # Background
+                    [cls.ARTERY[0], cls.ARTERY[1], cls.ARTERY[2], 255],  # Artery
+                ],
+                dtype=np.uint8,
+            )
+
+        @classmethod
+        def get_vein_only_lut(cls):
+            """Get LUT for vein-only display (single mask as blue)."""
+            return np.array(
+                [
+                    [0, 0, 0, 0],  # Background
+                    [cls.VEIN[0], cls.VEIN[1], cls.VEIN[2], 255],  # Vein
                 ],
                 dtype=np.uint8,
             )
@@ -220,6 +256,11 @@ class AppConfig:
         # Mode shortcuts for Optic Disc task
         MODE_DRAW_DISC = "1"
         MODE_DELETE_DISC = "2"
+
+        # Dedicated annotation mode shortcuts
+        ANNOTATION_ARTERY = "Ctrl+C"
+        ANNOTATION_VEIN = "Ctrl+V"
+        ANNOTATION_EXIT = "Ctrl+X"
 
         @classmethod
         def get_shortcuts_html(cls):
@@ -296,7 +337,15 @@ class AppConfig:
                 <tr><td>{cls.MODE_DRAW_DISC}</td><td>Draw Disc</td></tr>
                 <tr><td>{cls.MODE_DELETE_DISC}</td><td>Delete Disc</td></tr>
             </table>
-            
+
+            <h3>🔴🔵 Dedicated Annotation Modes</h3>
+            <table>
+                <tr><th>Shortcut</th><th>Action</th></tr>
+                <tr><td>{cls.ANNOTATION_ARTERY}</td><td>Enter Artery Mode (show only artery mask)</td></tr>
+                <tr><td>{cls.ANNOTATION_VEIN}</td><td>Enter Vein Mode (show only vein mask)</td></tr>
+                <tr><td>{cls.ANNOTATION_EXIT}</td><td>Exit to Normal Mode</td></tr>
+            </table>
+
             <h3>ℹ️ Help</h3>
             <table>
                 <tr><th>Shortcut</th><th>Action</th></tr>

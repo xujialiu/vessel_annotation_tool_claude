@@ -190,6 +190,34 @@ def mask_to_rgba_od(disc_mask, alpha):
     return np.ascontiguousarray(rgba)
 
 
+def _get_artery_only_lut():
+    return AppConfig.Color.get_artery_only_lut()
+
+
+def _get_vein_only_lut():
+    return AppConfig.Color.get_vein_only_lut()
+
+
+def mask_to_rgba_artery_only(artery_mask, alpha):
+    """Display only artery mask as red (for dedicated artery annotation mode)."""
+    binary = (artery_mask > 0).astype(np.uint8)
+    rgba = _get_artery_only_lut()[binary]
+    mask = binary > 0
+    if mask.any():
+        rgba[..., 3] = (mask * int(alpha * 255)).astype(np.uint8)
+    return np.ascontiguousarray(rgba)
+
+
+def mask_to_rgba_vein_only(vein_mask, alpha):
+    """Display only vein mask as blue (for dedicated vein annotation mode)."""
+    binary = (vein_mask > 0).astype(np.uint8)
+    rgba = _get_vein_only_lut()[binary]
+    mask = binary > 0
+    if mask.any():
+        rgba[..., 3] = (mask * int(alpha * 255)).astype(np.uint8)
+    return np.ascontiguousarray(rgba)
+
+
 def masks_to_rgba_region_av(artery_mask, vein_mask, alpha, x0, y0, x1, y1):
     return masks_to_rgba_av(artery_mask[y0:y1, x0:x1], vein_mask[y0:y1, x0:x1], alpha)
 
@@ -423,6 +451,10 @@ class ImageCanvas(QLabel):
         self.brush_size = AppConfig.Brush.DEFAULT_SIZE
         self.mode = "modify_artery"
 
+        # Annotation mode state (for dedicated A/V editing)
+        self.annotation_mode = AppConfig.AnnotationMode.NORMAL
+        self._previous_paint_mode = "modify_artery"
+
         self._drawing = False
         self._dragging = False
         self._last_pos = None
@@ -494,9 +526,19 @@ class ImageCanvas(QLabel):
 
         if self.task_type == AppConfig.Task.ARTERY_VEIN:
             if self.artery_mask is not None and self.vein_mask is not None:
-                self.overlay_rgba = masks_to_rgba_av(
-                    self.artery_mask, self.vein_mask, self.alpha
-                )
+                # Choose visualization based on annotation mode
+                if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+                    self.overlay_rgba = mask_to_rgba_artery_only(
+                        self.artery_mask, self.alpha
+                    )
+                elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+                    self.overlay_rgba = mask_to_rgba_vein_only(
+                        self.vein_mask, self.alpha
+                    )
+                else:  # NORMAL mode
+                    self.overlay_rgba = masks_to_rgba_av(
+                        self.artery_mask, self.vein_mask, self.alpha
+                    )
                 qimg = numpy_rgba_to_qimage(self.overlay_rgba)
                 self.overlay_pixmap = QPixmap.fromImage(qimg)
             else:
@@ -587,14 +629,25 @@ class ImageCanvas(QLabel):
                 return QColor(*AppConfig.Color.STROKE_DELETE)
             return QColor(*AppConfig.Color.STROKE_DISC)
         else:
-            if "delete" in self.mode:
-                return QColor(*AppConfig.Color.STROKE_DELETE)
-            elif "artery" in self.mode:
+            # In dedicated annotation mode, always use the mode color
+            if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+                if "delete" in self.mode:
+                    return QColor(*AppConfig.Color.STROKE_DELETE)
                 return QColor(*AppConfig.Color.STROKE_ARTERY)
-            elif "vein" in self.mode:
+            elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+                if "delete" in self.mode:
+                    return QColor(*AppConfig.Color.STROKE_DELETE)
                 return QColor(*AppConfig.Color.STROKE_VEIN)
             else:
-                return QColor(*AppConfig.Color.STROKE_DEFAULT)
+                # Normal mode - use existing logic
+                if "delete" in self.mode:
+                    return QColor(*AppConfig.Color.STROKE_DELETE)
+                elif "artery" in self.mode:
+                    return QColor(*AppConfig.Color.STROKE_ARTERY)
+                elif "vein" in self.mode:
+                    return QColor(*AppConfig.Color.STROKE_VEIN)
+                else:
+                    return QColor(*AppConfig.Color.STROKE_DEFAULT)
 
     def mousePressEvent(self, ev):
         if ev.button() != Qt.LeftButton or not self.base_pixmap:
@@ -847,6 +900,14 @@ class ImageCanvas(QLabel):
         config = AppConfig.Task.get(self.task_type)
 
         for mode_id, label in config["modes"]:
+            # In dedicated annotation mode, only show relevant modes
+            if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+                if mode_id not in ("draw_artery", "delete_artery"):
+                    continue
+            elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+                if mode_id not in ("draw_vein", "delete_vein"):
+                    continue
+
             act = menu.addAction(label)
             act.triggered.connect(lambda _, m=mode_id: self.parent_window.set_mode(m))
 
@@ -984,6 +1045,9 @@ class MaskEditor(QMainWindow):
 
         # Mode shortcuts storage
         self.mode_shortcuts = []
+
+        # Annotation mode state (for dedicated A/V editing)
+        self.annotation_mode = AppConfig.AnnotationMode.NORMAL
 
         # Setup brush slider for diameter-based sizing
         self._setup_brush_slider()
@@ -1289,6 +1353,16 @@ class MaskEditor(QMainWindow):
             sc.BRUSH_INCREASE: lambda: self.ui.brushSlider.setValue(
                 min(AppConfig.Brush.MAX_SIZE, self.ui.brushSlider.value() + 1)
             ),
+            # Annotation mode shortcuts
+            sc.ANNOTATION_ARTERY: lambda: self.set_annotation_mode(
+                AppConfig.AnnotationMode.ARTERY
+            ),
+            sc.ANNOTATION_VEIN: lambda: self.set_annotation_mode(
+                AppConfig.AnnotationMode.VEIN
+            ),
+            sc.ANNOTATION_EXIT: lambda: self.set_annotation_mode(
+                AppConfig.AnnotationMode.NORMAL
+            ),
         }
         for seq, func in shortcuts.items():
             QShortcut(QKeySequence(seq), self, func)
@@ -1402,6 +1476,11 @@ class MaskEditor(QMainWindow):
         self.task_type = self.ui.taskCombo.currentData()
         self.canvas.set_task_type(self.task_type)
         self._update_mode_buttons()
+
+        # Reset annotation mode when switching tasks
+        self.annotation_mode = AppConfig.AnnotationMode.NORMAL
+        self.canvas.annotation_mode = AppConfig.AnnotationMode.NORMAL
+        self._update_annotation_mode_indicator()
 
         self.modified = False
         self.current_name = None
@@ -1585,6 +1664,13 @@ class MaskEditor(QMainWindow):
             elif reply == QMessageBox.Cancel:
                 return
 
+        # Reset annotation mode when switching images
+        if self.annotation_mode != AppConfig.AnnotationMode.NORMAL:
+            self.annotation_mode = AppConfig.AnnotationMode.NORMAL
+            self.canvas.annotation_mode = AppConfig.AnnotationMode.NORMAL
+            self._update_mode_buttons_for_annotation()
+            self._update_annotation_mode_indicator()
+
         txt = self.ui.listWidget.item(new_idx).text()
         name = txt[2:] if txt.startswith("✅ ") else txt
         mask_path, img_path = self.pairs[name]
@@ -1750,8 +1836,76 @@ class MaskEditor(QMainWindow):
 
     def set_mode(self, mode):
         """Set the current drawing mode."""
+        # Validate mode is allowed in current annotation mode
+        if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+            if mode not in ("draw_artery", "delete_artery"):
+                return  # Ignore invalid mode
+        elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+            if mode not in ("draw_vein", "delete_vein"):
+                return  # Ignore invalid mode
+
         self.canvas.mode = mode
         self._update_brush_button_styles(mode)
+
+    def set_annotation_mode(self, mode):
+        """Set the annotation mode (normal, artery, or vein)."""
+        if self.task_type != AppConfig.Task.ARTERY_VEIN:
+            return  # Only for A/V task
+
+        old_mode = self.annotation_mode
+        if old_mode == mode:
+            return  # No change
+
+        self.annotation_mode = mode
+        self.canvas.annotation_mode = mode
+
+        if mode != AppConfig.AnnotationMode.NORMAL:
+            # Entering dedicated mode - save current paint mode
+            self.canvas._previous_paint_mode = self.canvas.mode
+            # Set appropriate default paint mode
+            if mode == AppConfig.AnnotationMode.ARTERY:
+                self.set_mode("draw_artery")
+            else:  # VEIN
+                self.set_mode("draw_vein")
+        else:
+            # Exiting dedicated mode - restore previous mode
+            self.canvas.mode = self.canvas._previous_paint_mode
+            self._update_brush_button_styles(self.canvas.mode)
+
+        # Update mode buttons enabled state
+        self._update_mode_buttons_for_annotation()
+
+        # Update visual indicator
+        self._update_annotation_mode_indicator()
+
+        # Rebuild display with new visualization
+        self.canvas._build_pixmaps()
+
+    def _update_mode_buttons_for_annotation(self):
+        """Enable/disable mode buttons based on annotation mode."""
+        for mode_id, btn in self.brush_buttons.items():
+            if self.annotation_mode == AppConfig.AnnotationMode.NORMAL:
+                btn.setEnabled(True)
+            elif self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+                btn.setEnabled(mode_id in ("draw_artery", "delete_artery"))
+            elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+                btn.setEnabled(mode_id in ("draw_vein", "delete_vein"))
+
+    def _update_annotation_mode_indicator(self):
+        """Update the UI to show current annotation mode."""
+        if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+            self.ui.modeGroup.setStyleSheet(
+                f"QGroupBox {{ border: 3px solid {AppConfig.Color.ANNOTATION_MODE_ARTERY}; }}"
+            )
+            self.ui.modeGroup.setTitle("Modes [ARTERY MODE - Ctrl+X to exit]")
+        elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+            self.ui.modeGroup.setStyleSheet(
+                f"QGroupBox {{ border: 3px solid {AppConfig.Color.ANNOTATION_MODE_VEIN}; }}"
+            )
+            self.ui.modeGroup.setTitle("Modes [VEIN MODE - Ctrl+X to exit]")
+        else:
+            self.ui.modeGroup.setStyleSheet("")
+            self.ui.modeGroup.setTitle("Modes")
 
     def _update_brush_button_styles(self, active):
         """Update button styles to show active mode."""
@@ -1783,9 +1937,19 @@ class MaskEditor(QMainWindow):
 
         if self.task_type == AppConfig.Task.ARTERY_VEIN:
             if self.working_artery is not None and self.working_vein is not None:
-                self.canvas.overlay_rgba = masks_to_rgba_av(
-                    self.working_artery, self.working_vein, self.canvas.alpha
-                )
+                # Use appropriate visualization based on annotation mode
+                if self.annotation_mode == AppConfig.AnnotationMode.ARTERY:
+                    self.canvas.overlay_rgba = mask_to_rgba_artery_only(
+                        self.working_artery, self.canvas.alpha
+                    )
+                elif self.annotation_mode == AppConfig.AnnotationMode.VEIN:
+                    self.canvas.overlay_rgba = mask_to_rgba_vein_only(
+                        self.working_vein, self.canvas.alpha
+                    )
+                else:
+                    self.canvas.overlay_rgba = masks_to_rgba_av(
+                        self.working_artery, self.working_vein, self.canvas.alpha
+                    )
                 qimg = numpy_rgba_to_qimage(self.canvas.overlay_rgba)
                 self.canvas.overlay_pixmap = QPixmap.fromImage(qimg)
                 self.canvas._composed_pixmap = None
