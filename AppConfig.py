@@ -227,7 +227,7 @@ class AppConfig:
 
         # Edit operations
         UNDO = "Ctrl+Z"
-        REDO = "Ctrl+Y"
+        REDO = "Shift+Ctrl+Z"
 
         # View operations
         TOGGLE_ENHANCED = "E"

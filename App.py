@@ -46,6 +46,49 @@ import cv2
 from AppConfig import AppConfig
 
 import yaml
+import logging
+
+# Module-level logger
+logger = logging.getLogger(__name__)
+
+
+def setup_logging(log_dir: str = None):
+    """
+    Setup logging configuration.
+
+    Args:
+        log_dir: Directory to save log file. If None, logs only to console.
+    """
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    # Setup root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Clear existing handlers
+    root_logger.handlers.clear()
+
+    # Console handler (INFO level)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # File handler (DEBUG level) - only if log_dir is provided
+    if log_dir and os.path.isdir(log_dir):
+        log_file = os.path.join(log_dir, "app.log")
+        try:
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+            logger.info(f"Log file: {log_file}")
+        except Exception as e:
+            logger.warning(f"Could not create log file: {e}")
 
 
 # =====================================================================
@@ -793,10 +836,10 @@ class ImageCanvas(QLabel):
         # For very long strokes, draw every Nth point
         points = self._stroke_preview_points
         step = 1
-        if len(points) > AppConfig.UI.STROKE_POINTS_THRESHOLD_STEP_2:
-            step = 2
-        elif len(points) > AppConfig.UI.STROKE_POINTS_THRESHOLD_STEP_3:
+        if len(points) > AppConfig.UI.STROKE_POINTS_THRESHOLD_STEP_3:
             step = 3
+        elif len(points) > AppConfig.UI.STROKE_POINTS_THRESHOLD_STEP_2:
+            step = 2
 
         for i in range(0, len(points), step):
             x, y, size = points[i]
@@ -1099,19 +1142,22 @@ class MaskEditor(QMainWindow):
         """Load app settings from yaml file, create if not exists."""
         self.settings_file_path = os.path.join(folder_path, AppConfig.File.SETTING_FILE)
 
+        # Setup logging with log file in the same directory
+        setup_logging(folder_path)
+
         if os.path.exists(self.settings_file_path):
             try:
                 with open(self.settings_file_path, "r", encoding="utf-8") as f:
                     self.app_settings = yaml.safe_load(f) or {}
-                print(f"Loaded settings from {self.settings_file_path}")
+                logger.info(f"Loaded settings from {self.settings_file_path}")
             except Exception as e:
-                print(f"Error loading settings: {e}")
+                logger.error(f"Error loading settings: {e}")
                 self.app_settings = self._get_default_settings()
         else:
             # Create default settings file
             self.app_settings = self._get_default_settings()
             self._save_app_settings()
-            print(f"Created default settings at {self.settings_file_path}")
+            logger.info(f"Created default settings at {self.settings_file_path}")
 
         # Apply loaded settings
         self._apply_app_settings()
@@ -1126,7 +1172,7 @@ class MaskEditor(QMainWindow):
                     self.app_settings, f, default_flow_style=False, allow_unicode=True
                 )
         except Exception as e:
-            print(f"Error saving settings: {e}")
+            logger.error(f"Error saving settings: {e}")
 
     def _apply_app_settings(self):
         """Apply loaded settings to the application."""
@@ -1162,7 +1208,7 @@ class MaskEditor(QMainWindow):
                 self.ui.taskCombo.setCurrentIndex(0)
 
         except Exception as e:
-            print(f"Error applying settings: {e}")
+            logger.error(f"Error applying settings: {e}")
 
     def _update_and_save_settings(self):
         """Update settings dict from current state and save."""
@@ -1596,7 +1642,7 @@ class MaskEditor(QMainWindow):
             with open(p, "w") as f:
                 json.dump(self.record, f, indent=2)
         except Exception as e:
-            print(e)
+            logger.error(f"Error saving record: {e}")
 
     def _try_match(self):
         """Try to match mask and image files."""
